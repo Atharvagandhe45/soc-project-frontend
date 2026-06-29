@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOC Prediction Platform</title>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        document.body.innerHTML = '<div style="color:red; background:black; padding:20px; z-index:9999; position:absolute; top:0; left:0; width:100vw; height:100vh;">' +
+          '<h1>Global Error Caught!</h1>' +
+          '<p>' + msg + '</p>' +
+          '<p>' + url + ':' + line + ':' + col + '</p>' +
+          '<pre>' + (error && error.stack ? error.stack : '') + '</pre></div>';
+      };
+      window.onunhandledrejection = function(event) {
+        document.body.innerHTML = '<div style="color:red; background:black; padding:20px; z-index:9999; position:absolute; top:0; left:0; width:100vw; height:100vh;">' +
+          '<h1>Unhandled Promise Rejection!</h1>' +
+          '<p>' + event.reason + '</p>' +
+          '<pre>' + (event.reason && event.reason.stack ? event.reason.stack : '') + '</pre></div>';
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
