@@ -54,68 +54,68 @@ const FarmBoundariesModule = ({
       setSelectedPolygonId(tempId);
     } else {
       window.isDrawingMode = false;
-      setPolygons(prev => prev.filter(p => !p.isDrawing || p.coordinates.length >= 3).map(p => ({...p, isDrawing: false})));
+      setPolygons(prev => prev.filter(p => !p.isDrawing || p.coordinates.length >= 3).map(p => ({ ...p, isDrawing: false })));
       toast.success("Drawing finished.");
     }
   };
 
   const handleSavePolygon = async () => {
     if (!selectedPolygon) return;
-    
+
     if (!selectedPolygon.coordinates || selectedPolygon.coordinates.length < 3) {
-        toast.error("Polygon must have at least 3 points to be saved.");
-        return;
+      toast.error("Polygon must have at least 3 points to be saved.");
+      return;
     }
-    
+
     const toastId = toast.loading("Saving polygon...");
     try {
-        const payload = {
-            name: selectedPolygon.name || "Farm Boundary",
-            coordinates: selectedPolygon.coordinates,
-            area: metrics.area,
-            perimeter: metrics.perimeter
-        };
-        
-        if (selectedPolygon._id) {
-            const updated = await updatePolygon(selectedPolygon._id, payload);
-            setPolygons(prev => prev.map(p => p._id === updated._id ? updated : p));
-            toast.success("Polygon updated!", { id: toastId });
-        } else {
-            const saved = await savePolygon(payload);
-            setPolygons(prev => prev.map(p => p.tempId === selectedPolygon.tempId ? saved : p));
-            setSelectedPolygonId(saved._id);
-            toast.success("Polygon saved!", { id: toastId });
-        }
+      const payload = {
+        name: selectedPolygon.name || "Farm Boundary",
+        coordinates: selectedPolygon.coordinates,
+        area: metrics.area,
+        perimeter: metrics.perimeter
+      };
+
+      if (selectedPolygon._id) {
+        const updated = await updatePolygon(selectedPolygon._id, payload);
+        setPolygons(prev => prev.map(p => p._id === updated._id ? updated : p));
+        toast.success("Polygon updated!", { id: toastId });
+      } else {
+        const saved = await savePolygon(payload);
+        setPolygons(prev => prev.map(p => p.tempId === selectedPolygon.tempId ? saved : p));
+        setSelectedPolygonId(saved._id);
+        toast.success("Polygon saved!", { id: toastId });
+      }
     } catch (e) {
-        toast.error("Failed to save polygon.", { id: toastId });
+      toast.error("Failed to save polygon.", { id: toastId });
     }
   };
 
   const handleDeletePolygon = async () => {
     if (!selectedPolygon) return;
-    
+
     if (selectedPolygon._id) {
-        const toastId = toast.loading("Deleting polygon...");
-        try {
-            await deletePolygonApi(selectedPolygon._id);
-            setPolygons(prev => prev.filter(p => p._id !== selectedPolygon._id));
-            setSelectedPolygonId(null);
-            toast.success("Polygon deleted.", { id: toastId });
-        } catch (e) {
-            toast.error("Failed to delete.", { id: toastId });
-        }
-    } else {
-        setPolygons(prev => prev.filter(p => p.tempId !== selectedPolygon.tempId));
+      const toastId = toast.loading("Deleting polygon...");
+      try {
+        await deletePolygonApi(selectedPolygon._id);
+        setPolygons(prev => prev.filter(p => p._id !== selectedPolygon._id));
         setSelectedPolygonId(null);
-        toast.success("Polygon removed.");
+        toast.success("Polygon deleted.", { id: toastId });
+      } catch (e) {
+        toast.error("Failed to delete.", { id: toastId });
+      }
+    } else {
+      setPolygons(prev => prev.filter(p => p.tempId !== selectedPolygon.tempId));
+      setSelectedPolygonId(null);
+      toast.success("Polygon removed.");
     }
   };
 
   const flyToSelected = () => {
     if (selectedPolygon && mapViewer) {
-        const cartesianArray = selectedPolygon.coordinates.map(pt => Cesium.Cartesian3.fromDegrees(pt[1], pt[0]));
-        const boundingSphere = Cesium.BoundingSphere.fromPoints(cartesianArray);
-        mapViewer.camera.flyToBoundingSphere(boundingSphere, { duration: 1.5 });
+      const cartesianArray = selectedPolygon.coordinates.map(pt => Cesium.Cartesian3.fromDegrees(pt[1], pt[0]));
+      const boundingSphere = Cesium.BoundingSphere.fromPoints(cartesianArray);
+      mapViewer.camera.flyToBoundingSphere(boundingSphere, { duration: 1.5 });
     }
   };
 
@@ -125,89 +125,91 @@ const FarmBoundariesModule = ({
       toast.error("Map not ready.");
       return;
     }
-    
+
     setIsDetecting(true);
     const toastId = toast.loading("Capturing 3D Globe...");
-    
+
     try {
       await new Promise(r => setTimeout(r, 500));
       const canvas = mapViewer.scene.canvas;
       const base64Image = canvas.toDataURL("image/jpeg", 0.9);
-      
-      toast.loading("Analyzing with ML model...", { id: toastId });
-      
-      const result = await detectBoundaries(base64Image);
-      
-      if (result.success && result.predictions?.length > 0) {
-          const newPolygons = [];
-          let totalFarms = 0;
-          
-          result.predictions.forEach((prediction) => {
-            if (prediction.class === "farm_boundary" && prediction.points) {
-              totalFarms++;
-              let latLngs = [];
-              const dpr = window.devicePixelRatio || 1;
-              
-              prediction.points.forEach(pt => {
-                const screenX = pt.x / dpr;
-                const screenY = pt.y / dpr;
-                
-                const cartesian = mapViewer.camera.pickEllipsoid(
-                  new Cesium.Cartesian2(screenX, screenY), 
-                  mapViewer.scene.globe.ellipsoid
-                );
-                
-                if (cartesian) {
-                  const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
-                  latLngs.push([
-                    Cesium.Math.toDegrees(cartographic.latitude),
-                    Cesium.Math.toDegrees(cartographic.longitude)
-                  ]);
-                }
-              });
-              
-              if (latLngs.length >= 3) {
-                try {
-                  const turfPolygon = turf.polygon([[...latLngs.map(c => [c[1], c[0]]), [latLngs[0][1], latLngs[0][0]]]]);
-                  const simplified = turf.simplify(turfPolygon, { tolerance: 0.00002, highQuality: false });
-                  const simplifiedCoords = simplified.geometry.coordinates[0];
-                  simplifiedCoords.pop();
-                  latLngs = simplifiedCoords.map(c => [c[1], c[0]]);
-                } catch (e) {
-                  console.error("Simplification error:", e);
-                }
 
-                newPolygons.push({
-                    tempId: `detected_${Date.now()}_${Math.random()}`,
-                    coordinates: latLngs,
-                    confidence: prediction.confidence,
-                    name: "Detected Farm"
-                });
+      toast.loading("Analyzing with ML model...", { id: toastId });
+
+      const result = await detectBoundaries(base64Image);
+
+      if (result.success && result.predictions?.length > 0) {
+        const newPolygons = [];
+        let totalFarms = 0;
+
+        result.predictions.forEach((prediction) => {
+          if (prediction.class === "farm_boundary" && prediction.points) {
+            totalFarms++;
+            let latLngs = [];
+            const canvas = mapViewer.scene.canvas;
+            const scaleX = canvas.clientWidth / canvas.width;
+            const scaleY = canvas.clientHeight / canvas.height;
+
+            prediction.points.forEach(pt => {
+              const screenX = pt.x * scaleX;
+              const screenY = pt.y * scaleY;
+
+              const cartesian = mapViewer.camera.pickEllipsoid(
+                new Cesium.Cartesian2(screenX, screenY),
+                mapViewer.scene.globe.ellipsoid
+              );
+
+              if (cartesian) {
+                const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+                latLngs.push([
+                  Cesium.Math.toDegrees(cartographic.latitude),
+                  Cesium.Math.toDegrees(cartographic.longitude)
+                ]);
               }
-            }
-          });
-          
-          if (newPolygons.length > 0) {
-            setPolygons([...polygons, ...newPolygons]);
-            toast.success(`Detected ${totalFarms} boundaries!`, { id: toastId });
-            
-            newPolygons.forEach(p => {
-                 const m = calculatePolygonMetrics(p.coordinates);
-                 savePolygon({
-                     name: p.name,
-                     coordinates: p.coordinates,
-                     area: m.area,
-                     perimeter: m.perimeter,
-                     confidence: p.confidence
-                 }).then(saved => {
-                     setPolygons(prev => prev.map(existing => existing.tempId === p.tempId ? saved : existing));
-                 }).catch(console.error);
             });
-          } else {
-             toast.error("No boundaries detected.", { id: toastId });
+
+            if (latLngs.length >= 3) {
+              try {
+                const turfPolygon = turf.polygon([[...latLngs.map(c => [c[1], c[0]]), [latLngs[0][1], latLngs[0][0]]]]);
+                const simplified = turf.simplify(turfPolygon, { tolerance: 0.00002, highQuality: false });
+                const simplifiedCoords = simplified.geometry.coordinates[0];
+                simplifiedCoords.pop();
+                latLngs = simplifiedCoords.map(c => [c[1], c[0]]);
+              } catch (e) {
+                console.error("Simplification error:", e);
+              }
+
+              newPolygons.push({
+                tempId: `detected_${Date.now()}_${Math.random()}`,
+                coordinates: latLngs,
+                confidence: prediction.confidence,
+                name: "Detected Farm"
+              });
+            }
           }
+        });
+
+        if (newPolygons.length > 0) {
+          setPolygons([...polygons, ...newPolygons]);
+          toast.success(`Detected ${totalFarms} boundaries!`, { id: toastId });
+
+          newPolygons.forEach(p => {
+            const m = calculatePolygonMetrics(p.coordinates);
+            savePolygon({
+              name: p.name,
+              coordinates: p.coordinates,
+              area: m.area,
+              perimeter: m.perimeter,
+              confidence: p.confidence
+            }).then(saved => {
+              setPolygons(prev => prev.map(existing => existing.tempId === p.tempId ? saved : existing));
+            }).catch(console.error);
+          });
+        } else {
+          toast.error("No boundaries detected.", { id: toastId });
+        }
       } else {
-          toast.error(result.error || "No boundaries detected.", { id: toastId });
+        toast.error(result.error || "No boundaries detected.", { id: toastId });
       }
     } catch (error) {
       console.error(error);
@@ -219,7 +221,7 @@ const FarmBoundariesModule = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-      
+
       <div className="pb-4 mb-4 border-b border-slate-800">
         <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
           Farm Boundaries
@@ -235,44 +237,44 @@ const FarmBoundariesModule = ({
             </h2>
             <button onClick={() => setSelectedPolygonId(null)} className="text-xs text-slate-500 hover:text-slate-300 underline">Close</button>
           </div>
-          
+
           <div className="bg-slate-900/50 border border-emerald-500/30 rounded-xl p-4 flex flex-col gap-3">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-slate-400 uppercase">Status</span>
-                <span className="text-xs font-bold text-emerald-400">{selectedPolygon._id ? 'Saved' : 'Unsaved Draft'}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase">Status</span>
+              <span className="text-xs font-bold text-emerald-400">{selectedPolygon._id ? 'Saved' : 'Unsaved Draft'}</span>
             </div>
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-slate-400 uppercase">Vertices</span>
-                <span className="text-sm font-bold text-slate-200">{selectedPolygon.coordinates?.length || 0}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase">Vertices</span>
+              <span className="text-sm font-bold text-slate-200">{selectedPolygon.coordinates?.length || 0}</span>
             </div>
             <div className="flex flex-col gap-1 border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-slate-400 uppercase">Area</span>
-                <span className="text-2xl font-light text-cyan-400">
-                    {(metrics.area / 10000).toFixed(2)} <span className="text-sm text-slate-500">hectares</span>
-                </span>
-                <span className="text-xs text-slate-500">{metrics.area.toFixed(2)} sq meters</span>
+              <span className="text-xs font-bold text-slate-400 uppercase">Area</span>
+              <span className="text-2xl font-light text-cyan-400">
+                {(metrics.area / 10000).toFixed(2)} <span className="text-sm text-slate-500">hectares</span>
+              </span>
+              <span className="text-xs text-slate-500">{metrics.area.toFixed(2)} sq meters</span>
             </div>
             <div className="flex flex-col gap-1 pb-2">
-                <span className="text-xs font-bold text-slate-400 uppercase">Perimeter</span>
-                <span className="text-xl font-light text-purple-400">
-                    {metrics.perimeter.toFixed(2)} <span className="text-sm text-slate-500">meters</span>
-                </span>
+              <span className="text-xs font-bold text-slate-400 uppercase">Perimeter</span>
+              <span className="text-xl font-light text-purple-400">
+                {metrics.perimeter.toFixed(2)} <span className="text-sm text-slate-500">meters</span>
+              </span>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-2 mt-2">
-                <button onClick={flyToSelected} className="col-span-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg px-3 py-2 text-xs font-medium transition-all">
-                    Fly to Boundary
-                </button>
-                <button onClick={handleSavePolygon} className="flex items-center justify-center gap-2 bg-emerald-950/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-900/50 rounded-lg px-3 py-2 text-xs font-medium transition-all">
-                    <Save className="w-3.5 h-3.5" /> Save
-                </button>
-                <button onClick={handleDeletePolygon} className="flex items-center justify-center gap-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded-lg px-3 py-2 text-xs font-medium transition-all">
-                    <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
+              <button onClick={flyToSelected} className="col-span-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg px-3 py-2 text-xs font-medium transition-all">
+                Fly to Boundary
+              </button>
+              <button onClick={handleSavePolygon} className="flex items-center justify-center gap-2 bg-emerald-950/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-900/50 rounded-lg px-3 py-2 text-xs font-medium transition-all">
+                <Save className="w-3.5 h-3.5" /> Save
+              </button>
+              <button onClick={handleDeletePolygon} className="flex items-center justify-center gap-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded-lg px-3 py-2 text-xs font-medium transition-all">
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
             </div>
           </div>
           <div className="text-xs text-slate-500 bg-slate-900/30 p-3 rounded-lg border border-slate-800">
-              <strong>Tip:</strong> Drag the white points on the map to reshape the polygon. Right-click a point to remove it.
+            <strong>Tip:</strong> Drag the white points on the map to reshape the polygon. Right-click a point to remove it.
           </div>
         </div>
       ) : (
@@ -306,14 +308,14 @@ const FarmBoundariesModule = ({
               <span className="text-xl font-bold text-emerald-400">{detectionCount}</span>
             </div>
           </section>
-          
+
           <section className="space-y-4">
-              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <PenTool className="w-4 h-4" /> Editing Tools
-              </h2>
-              <button onClick={handleDrawMode} className={`w-full ${window.isDrawingMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/50'} border rounded-lg px-4 py-2 text-sm font-medium transition-all shadow-sm`}>
-                {window.isDrawingMode ? 'Finish Drawing' : 'Draw New Polygon'}
-              </button>
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <PenTool className="w-4 h-4" /> Editing Tools
+            </h2>
+            <button onClick={handleDrawMode} className={`w-full ${window.isDrawingMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/50'} border rounded-lg px-4 py-2 text-sm font-medium transition-all shadow-sm`}>
+              {window.isDrawingMode ? 'Finish Drawing' : 'Draw New Polygon'}
+            </button>
           </section>
 
           <section className="space-y-4">
