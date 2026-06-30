@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as Cesium from 'cesium';
 import toast from 'react-hot-toast';
-import { MapPin, Scan, Trash2, Eye, EyeOff, Download, Image as ImageIcon, PenTool, Save } from 'lucide-react';
+import { MapPin, Scan, Trash2, Eye, EyeOff, Download, Image as ImageIcon, PenTool, Save, Search } from 'lucide-react';
 import { detectBoundaries, savePolygon, deletePolygon as deletePolygonApi, updatePolygon } from '../../services/api';
 import { calculatePolygonMetrics } from '../../utils/polygonUtils';
 import { exportToCSV, exportToKML } from '../../utils/export';
@@ -27,6 +27,8 @@ const FarmBoundariesModule = ({
 }) => {
   const [lat, setLat] = useState('19.0760');
   const [lng, setLng] = useState('72.8777');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
   const selectedPolygon = polygons.find(p => p._id === selectedPolygonId || p.tempId === selectedPolygonId);
   const metrics = selectedPolygon ? calculatePolygonMetrics(selectedPolygon.coordinates) : { area: 0, perimeter: 0 };
@@ -42,6 +44,39 @@ const FarmBoundariesModule = ({
       return;
     }
     onGoToLocation(lat, lng);
+  };
+
+  const handleSearch = async (e) => {
+    if (e) e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    const toastId = toast.loading("Searching location...");
+
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        const result = data[0];
+        const newLat = parseFloat(result.lat);
+        const newLng = parseFloat(result.lon);
+        
+        setLat(newLat.toString());
+        setLng(newLng.toString());
+        
+        onGoToLocation(newLat, newLng, 600, true);
+        
+        toast.success(`Found: ${result.display_name.split(',')[0]}`, { id: toastId });
+      } else {
+        toast.error("Location not found.", { id: toastId });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error searching location.", { id: toastId });
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const handleDrawMode = () => {
@@ -227,6 +262,26 @@ const FarmBoundariesModule = ({
           Farm Boundaries
         </h1>
         <p className="text-sm text-slate-400 mt-1">Detect, draw, and manage farm polygons.</p>
+      </div>
+
+      <div className="mb-6">
+        <form onSubmit={handleSearch} className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by village, city, district, state, landmark, or coordinates"
+            className="w-full bg-slate-900/50 border border-slate-700 text-slate-200 rounded-lg pl-10 pr-20 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder:text-slate-500"
+          />
+          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <button
+            type="submit"
+            disabled={isSearching}
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-3 py-1 rounded text-xs font-medium transition-colors"
+          >
+            {isSearching ? '...' : 'Search'}
+          </button>
+        </form>
       </div>
 
       {selectedPolygon ? (

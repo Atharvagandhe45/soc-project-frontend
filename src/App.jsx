@@ -27,8 +27,8 @@ function App() {
     loadPolygons();
   }, []);
 
-  const handleGoToLocation = (lat, lng) => {
-    setTargetCoordinates({ lat: parseFloat(lat), lng: parseFloat(lng) });
+  const handleGoToLocation = (lat, lng, height = 1000, isSearch = false) => {
+    setTargetCoordinates({ lat: parseFloat(lat), lng: parseFloat(lng), height, isSearch });
   };
 
   return (
